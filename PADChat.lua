@@ -29,29 +29,64 @@ local CHOICES = { "A", "X", "Y" }
 local KEY_COLOR = { A = "ff60d060", X = "ff4aa3ff", Y = "ffffd100", B = "ffff5050" }
 local PRESSED_KEY_COLOR = "ff9d9d9d"
 
+-- The controller's own glyph for a pad binding (Triangle on PlayStation pads),
+-- when the client offers it.
+function ns.PadAtlas(binding)
+	local util = InputIconTextureSetUtility
+	local ok, atlas = pcall(function() return util and util.GetNormalActiveInputIconButtonTexture(binding) end)
+	return ok and atlas or nil
+end
+
+-- Inline text for a button: its glyph, or its coloured letter(s) without one.
+local function KeyMarkup(key, size, pressed)
+	local atlas = not pressed and CreateAtlasMarkup and ns.PadAtlas(KEYS[key])
+	if atlas then return CreateAtlasMarkup(atlas, size or 16, size or 16) end
+	return "|c" .. (pressed and PRESSED_KEY_COLOR or KEY_COLOR[key] or "ffd0ccc0") .. key .. "|r"
+end
+
 -- Paints a button path. The first `pressedCount` keys are the ones already
--- pressed, so they grey out and the remaining presses keep their colour.
-local function FormatPath(path, pressedCount)
-	local colored = {}
+-- pressed, so they grey out and the remaining presses keep their colour. With
+-- glyphs, pressed keys are dropped instead; the breadcrumb shows them. `dim`
+-- greys the letters of a message that can't be sent. Also returns the gap to
+-- put before the message.
+local function FormatPath(path, pressedCount, dim)
+	local glyphs = CreateAtlasMarkup and ns.PadAtlas(KEYS.A)
+	local parts = {}
 	for i = 1, #path do
 		local key = path:sub(i, i)
-		colored[i] = "|c" .. (i <= pressedCount and PRESSED_KEY_COLOR or KEY_COLOR[key]) .. key .. "|r"
+		if not (glyphs and i <= pressedCount) then parts[#parts + 1] = KeyMarkup(key, 16, not glyphs and (dim or i <= pressedCount)) end
 	end
-	return table.concat(colored)
+	return table.concat(parts), glyphs and "  " or " - "
 end
 
 local function Print(text) print("|cff33ff99PAD Chat|r: " .. text) end
 
-ns.CHOICES, ns.KEY_COLOR, ns.Print = CHOICES, KEY_COLOR, Print
+ns.CHOICES, ns.KEY_COLOR, ns.KEYS, ns.Print, ns.KeyMarkup = CHOICES, KEY_COLOR, KEYS, Print, KeyMarkup
 -- Battlegrounds aren't in the WoW: Forever beta, so the Battleground tab and
 -- zone detection stay off until launch. Flip to true to re-enable them all.
 ns.BATTLEGROUNDS_ENABLED = ns.BATTLEGROUNDS_ENABLED or false
 -- Tabs, left to right. Whisper and Group both inherit Say's options; Say stays
 -- the tab the menu opens on. LFG whispers like Whisper (and inherits it), but
--- only shows when Y on a Looking For Group listing opened the menu.
-ns.CONTEXTS = { "LFG", "WHISPER", "DEFAULT", "GROUP", ns.BATTLEGROUNDS_ENABLED and "RAID" or nil }
+-- only shows when Y on a Looking For Group listing opened the menu. Roleplay
+-- (RP) speaks on /say with its own in-character phrases, and can be turned off.
+ns.CONTEXTS = { "LFG", "WHISPER", "DEFAULT", "RP", "GROUP", ns.BATTLEGROUNDS_ENABLED and "RAID" or nil }
 -- Retain the saved RAID variant key for existing menus; it is now the BG tab.
-ns.CONTEXT_LABELS = { LFG = "LFG", WHISPER = "Whisper", DEFAULT = "Say", GROUP = "Group", RAID = "Battleground" }
+ns.CONTEXT_LABELS = { LFG = "LFG", WHISPER = "Whisper", DEFAULT = "Say", RP = "RP", GROUP = "Group", RAID = "Battleground" }
+-- The HUD's tab strip is narrower than the editor.
+ns.TAB_LABELS = setmetatable({ RAID = "BG" }, { __index = ns.CONTEXT_LABELS })
+
+function ns.RoleplayEnabled() return not (ns.DB and ns.DB.roleplay == false) end
+
+-- The Roleplay tab keeps a branch per faction, so an account's Alliance and
+-- Horde characters each get their own phrases.
+function ns.RoleplayKey()
+	return UnitFactionGroup and UnitFactionGroup("player") == "Horde" and "RP_HORDE" or "RP"
+end
+
+-- Where a tab's variants are saved.
+function ns.VariantKey(context)
+	return context == "RP" and ns.RoleplayKey() or context
+end
 ns.MAX_WHISPERS = 10
 ns.MAX_DEPTH = 4 -- presses per message, counting the last one
 
@@ -115,7 +150,9 @@ function ns.FormatMessage(text, context)
 		-- coordinates when supporting other locales or objective boundaries.
 		if instanceID == 529 then location = AB_LOCATIONS[GetSubZoneText()] or "here" end
 	end
-	return (text:gsub("{location}", location):gsub("{LEVEL}", UnitLevel("player")):gsub("{CLASS}", (UnitClass("player"))))
+	local target = UnitName("target") or "friend"
+	return (text:gsub("{location}", location):gsub("{LEVEL}", UnitLevel("player")):gsub("{CLASS}", (UnitClass("player")))
+		:gsub("{TARGET}", target):gsub("{NAME}", (UnitName("player"))))
 end
 
 -- A variant replaces one option (including its children). Missing variants
@@ -125,13 +162,15 @@ function ns.PickNode(node, context)
 	if not node then return nil end
 	local variants, condition = node.variants, nil
 	if variants then
-		if context == "LFG" and variants.LFG ~= nil then condition = "LFG"
+		if context == "RP" then
+			if variants[ns.RoleplayKey()] ~= nil then condition = "RP" end
+		elseif context == "LFG" and variants.LFG ~= nil then condition = "LFG"
 		elseif context == "WHISPER" or context == "LFG" then
 			if variants.WHISPER ~= nil then condition = "WHISPER" end
 		elseif context == "RAID" and variants.RAID ~= nil then condition = "RAID"
 		elseif context ~= "DEFAULT" and variants.GROUP ~= nil then condition = "GROUP" end
 	end
-	if condition then node = variants[condition] end
+	if condition then node = variants[ns.VariantKey(condition)] end
 	return node and not node.empty and node or nil, condition
 end
 
@@ -159,7 +198,7 @@ end
 -- Group follows the player's current party/raid. Instance chat takes priority
 -- over a separate home group, matching the game's chat channel rules.
 function ns.GetChannel(chat)
-	if not chat or chat == "SAY" or chat == "DEFAULT" then return "SAY" end
+	if not chat or chat == "SAY" or chat == "DEFAULT" or chat == "RP" then return "SAY" end
 	if chat == "WHISPER" or chat == "LFG" then return ns.GetWhisperTarget() and "WHISPER" or nil end
 	local instance = IsInGroup(LE_PARTY_CATEGORY_INSTANCE)
 	if chat == "GROUP" then
@@ -252,6 +291,19 @@ function ns.UpgradeLFG(menu)
 	end
 end
 
+-- The Roleplay tab is new too; both factions' phrases join every saved menu.
+function ns.UpgradeRoleplay(menu)
+	for _, key in ipairs(CHOICES) do
+		local default = ns.DefaultMenu[key].variants or {}
+		menu[key] = menu[key] or { empty = true }
+		local node = menu[key]
+		node.variants = node.variants or {}
+		for _, faction in ipairs({ "RP", "RP_HORDE" }) do
+			if node.variants[faction] == nil then node.variants[faction] = DeepCopy(default[faction]) end
+		end
+	end
+end
+
 local activeMenus = {}
 for _, context in ipairs(ns.CONTEXTS) do activeMenus[context] = ns.ResolveNode(ns.DefaultMenu, context, 0) end
 activeMenus.WSG = ns.ResolveNode(ns.DefaultMenu, "RAID", 489)
@@ -311,17 +363,18 @@ open:SetAttribute("_onclick", [[
 	if not self:GetAttribute("open") then return end
 	if button == "LB" or button == "RB" then
 		local context = self:GetAttribute("menucontext") or "DEFAULT"
-		local first = self:GetAttribute("lfgopen") and "LFG" or "WHISPER"
-		if button == "RB" then
-			context = context == "LFG" and "WHISPER" or context == "WHISPER" and "DEFAULT" or context == "DEFAULT" and "GROUP" or context == "GROUP" and "RAID" or first
-		else
-			if context == "WHISPER" and first == "LFG" then context = "LFG"
-			elseif context == "WHISPER" or context == "LFG" then context = "RAID"
-			else context = context == "RAID" and "GROUP" or context == "GROUP" and "DEFAULT" or "WHISPER" end
+		-- The tabs this menu shows, left to right; both ends wrap.
+		local order = (self:GetAttribute("lfgopen") and "LFG " or "") .. "WHISPER DEFAULT "
+			.. (self:GetAttribute("roleplay") and "RP " or "") .. "GROUP"
+			.. (self:GetAttribute("battlegrounds") and " RAID" or "")
+		local first, last, before, after, seen
+		for name in order:gmatch("%S+") do
+			first = first or name
+			if seen and not after then after = name end
+			if name == context then seen = 1; before = last end
+			last = name
 		end
-		if context == "RAID" and not self:GetAttribute("battlegrounds") then
-			context = button == "RB" and first or "GROUP"
-		end
+		context = button == "RB" and (after or first) or (before or last)
 		self:SetAttribute("menucontext", context)
 		self:SetAttribute("path", "")
 		-- The D-pad only belongs to PAD Chat while a whisper tab is showing.
@@ -389,9 +442,14 @@ UpdateContextDriver()
 -- shape together until combat ends and the current quick chat menu closes.
 local publishedPaths = {}
 local menuDirty = true
+local publishedRoleplay
 
 local function PublishMenu()
+	-- The faction may only be known once the player enters the world.
+	if ns.RoleplayKey() ~= publishedRoleplay then menuDirty = true end
 	if not menuDirty or InCombatLockdown() or open:GetAttribute("open") then return end
+	open:SetAttribute("roleplay", ns.RoleplayEnabled())
+	publishedRoleplay = ns.RoleplayKey()
 	local snapshots = {}
 	for path in pairs(publishedPaths) do
 		open:SetAttribute("node-" .. path, nil)
@@ -515,36 +573,97 @@ end
 ------------------------------------------------------------------------
 local lastSeq = 0
 
+-- Where a tab sends right now, as the player knows the channel and in its chat
+-- colour, or why it can't: name, r, g, b, available.
+local CHANNEL_NAMES = { SAY = "Say", PARTY = "Party", RAID = "Raid", INSTANCE_CHAT = "Instance" }
+function ns.Destination(context)
+	local chatType = ns.GetChannel(context)
+	if not chatType then
+		local reason = (context == "WHISPER" or context == "LFG") and "No one to whisper"
+			or context == "RAID" and "Join a battleground first" or "Join a group first"
+		return reason, 1, 0.45, 0.4, false
+	end
+	local name = CHANNEL_NAMES[chatType]
+	if chatType == "WHISPER" then
+		local target = ns.GetWhisperTarget()
+		name = Ambiguate and Ambiguate(target, "short") or target
+	elseif context == "RAID" then
+		name = "Battleground"
+	end
+	local info = ChatTypeInfo and ChatTypeInfo[chatType]
+	return name, info and info.r or 1, info and info.g or 1, info and info.b or 1, true
+end
+
 local function SendNode(node, context)
 	if not (node and ns.IsMessage(node)) then return end
+	local said
 	if HasText(node) then
 		local chatType = ns.GetChannel(context)
 		if not chatType then
-			Print((context == "WHISPER" or context == "LFG") and "No one to whisper." or "Join a " .. (context == "RAID" and "battleground" or "group") .. " to send this message.")
+			local reason = (context == "WHISPER" or context == "LFG") and "No one to whisper." or "Join a " .. (context == "RAID" and "battleground" or "group") .. " to send this message."
+			Print(reason); ns.ShowToast(reason)
 			return
 		end
+		said = ns.FormatMessage(node.text, context)
 		local send = (C_ChatInfo and C_ChatInfo.SendChatMessage) or SendChatMessage
-		local ok, err = pcall(send, ns.FormatMessage(node.text, context), chatType, nil, chatType == "WHISPER" and ns.GetWhisperTarget() or nil)
-		if not ok then Print("|cffff5050Couldn't send:|r " .. tostring(err)); return end
+		local ok, err = pcall(send, said, chatType, nil, chatType == "WHISPER" and ns.GetWhisperTarget() or nil)
+		if not ok then Print("|cffff5050Couldn't send:|r " .. tostring(err)); ns.ShowToast("Couldn't send that message."); return end
 	end
 	if node.emote then
 		local emoteOK, emoteError = pcall(DoEmote, node.emote)
 		if not emoteOK then Print("|cffff5050Couldn't play emote:|r " .. tostring(emoteError)) end
 	end
+	ns.ShowToast(said and ns.Destination(context) .. ": " .. said or "/" .. node.emote:lower(), true)
 end
 ns.SendNode = SendNode -- the editor's "Send now" (a click, so /say is allowed)
 
 ------------------------------------------------------------------------
 -- On-screen menu
 ------------------------------------------------------------------------
+local WIDTH, INNER = 280, 252
+local MUTED = { 0.7, 0.68, 0.63 }
+
+-- The shared WoW-style frame: a soft shadow, gold trim, a dark body and an
+-- optional header band behind the title.
+function ns.Skin(frame, headerHeight)
+	local shadow = frame:CreateTexture(nil, "BACKGROUND", nil, -2)
+	shadow:SetPoint("TOPLEFT", -3, 3); shadow:SetPoint("BOTTOMRIGHT", 3, -3)
+	shadow:SetColorTexture(0, 0, 0, 0.4)
+	local trim = frame:CreateTexture(nil, "BACKGROUND", nil, -1)
+	trim:SetAllPoints(); trim:SetColorTexture(0.72, 0.57, 0.28, 0.9)
+	local body = frame:CreateTexture(nil, "BACKGROUND", nil, 0)
+	body:SetPoint("TOPLEFT", 1, -1); body:SetPoint("BOTTOMRIGHT", -1, 1)
+	body:SetColorTexture(0.06, 0.05, 0.045, 0.95)
+	if headerHeight then
+		local band = frame:CreateTexture(nil, "BACKGROUND", nil, 1)
+		band:SetPoint("TOPLEFT", 1, -1); band:SetPoint("TOPRIGHT", -1, -1); band:SetHeight(headerHeight)
+		band:SetColorTexture(0.15, 0.12, 0.08, 0.95)
+		local rule = frame:CreateTexture(nil, "BORDER")
+		rule:SetPoint("TOPLEFT", band, "BOTTOMLEFT"); rule:SetPoint("TOPRIGHT", band, "BOTTOMRIGHT"); rule:SetHeight(1)
+		rule:SetColorTexture(0.72, 0.57, 0.28, 0.5)
+	end
+end
+
+-- A face button: the controller's glyph, or a coloured disc with its letter.
+-- Repainted on every show, since the glyphs follow the active controller.
+local function PaintBadge(badge)
+	local atlas = ns.PadAtlas(KEYS[badge.key])
+	if atlas then
+		badge:SetAtlas(atlas)
+	else
+		local hex = KEY_COLOR[badge.key]
+		badge:SetColorTexture(tonumber(hex:sub(3, 4), 16) / 255, tonumber(hex:sub(5, 6), 16) / 255, tonumber(hex:sub(7, 8), 16) / 255)
+	end
+	badge.letter:SetShown(not atlas)
+end
+ns.PaintBadge = PaintBadge
+
 -- Shared with the editor so controller buttons look the same in both places.
 function ns.MakeBadge(parent, key, size)
 	size = size or 40
-	local hex = KEY_COLOR[key]
 	local badge = parent:CreateTexture(nil, "ARTWORK")
 	badge:SetSize(size, size)
 	badge:SetPoint("LEFT", 12, 0)
-	badge:SetColorTexture(tonumber(hex:sub(3, 4), 16) / 255, tonumber(hex:sub(5, 6), 16) / 255, tonumber(hex:sub(7, 8), 16) / 255)
 	local mask = parent:CreateMaskTexture()
 	mask:SetTexture("Interface\\CharacterFrame\\TempPortraitAlphaMask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
 	mask:SetAllPoints(badge)
@@ -553,70 +672,72 @@ function ns.MakeBadge(parent, key, size)
 	letter:SetPoint("CENTER", badge, "CENTER", 0, 0)
 	letter:SetTextColor(0.05, 0.05, 0.05)
 	letter:SetText(key)
+	badge.key, badge.letter = key, letter
+	PaintBadge(badge)
 	return badge
 end
 
 -- The editor uses the same view for its preview.
 function ns.CreateMenuView(parent, name)
 	local menu = CreateFrame("Frame", name, parent)
-	menu:SetSize(260, 160)
+	menu:SetSize(WIDTH, 160)
 	menu:Hide()
-
-	local edge = menu:CreateTexture(nil, "BACKGROUND", nil, 0)
-	edge:SetAllPoints()
-	edge:SetColorTexture(0.29, 0.27, 0.22, 0.9)
-
-	local bg = menu:CreateTexture(nil, "BACKGROUND", nil, 1)
-	bg:SetPoint("TOPLEFT", 1, -1)
-	bg:SetPoint("BOTTOMRIGHT", -1, 1)
-	bg:SetColorTexture(0.09, 0.09, 0.1, 0.96)
+	ns.Skin(menu, 60)
 
 	local title = menu:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 	title:SetPoint("TOPLEFT", 14, -12)
-	title:SetWidth(232)
 	title:SetJustifyH("LEFT")
-	title:SetWordWrap(true)
+	title:SetText("Quick Chat")
+	-- Where the chosen tab sends, e.g. "to Party" or "to Bob".
+	local destination = menu:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	destination:SetPoint("TOPRIGHT", -14, -14)
+	destination:SetWidth(INNER - 90); destination:SetJustifyH("RIGHT"); destination:SetWordWrap(false)
 
-	local sequence = menu:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	sequence:SetWidth(232); sequence:SetWordWrap(false); sequence:SetJustifyH("LEFT")
-	sequence:SetTextColor(0.7, 0.68, 0.63)
+	-- LB [tabs] RB, so the bumpers sit beside the way they move.
+	local shoulders = {}
+	for _, key in ipairs({ "LB", "RB" }) do
+		shoulders[key] = menu:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	end
 	local tabs = {}
 	for _, context in ipairs(ns.CONTEXTS) do
 		local tab = CreateFrame("Frame", nil, menu)
-		tab:SetSize(({ LFG = 36, WHISPER = 56, DEFAULT = 40, GROUP = 48, RAID = 82 })[context], 24)
+		tab:SetHeight(22)
 		tab.bg = tab:CreateTexture(nil, "BACKGROUND")
 		tab.bg:SetAllPoints()
+		tab.underline = tab:CreateTexture(nil, "ARTWORK")
+		tab.underline:SetPoint("BOTTOMLEFT"); tab.underline:SetPoint("BOTTOMRIGHT"); tab.underline:SetHeight(2)
+		tab.underline:SetColorTexture(1, 0.82, 0.3, 1)
 		tab.label = tab:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-		tab.label:SetPoint("CENTER"); tab.label:SetText(ns.CONTEXT_LABELS[context])
+		tab.label:SetPoint("CENTER", 0, 1); tab.label:SetText(ns.TAB_LABELS[context])
 		tabs[context] = tab
 	end
 
-	local headerLine = menu:CreateTexture(nil, "ARTWORK")
-	headerLine:SetSize(232, 1)
-	headerLine:SetColorTexture(0.29, 0.27, 0.22, 0.7)
+	local sequence = menu:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	sequence:SetWidth(INNER); sequence:SetWordWrap(false); sequence:SetJustifyH("LEFT")
+	sequence:SetTextColor(unpack(MUTED))
 
 	local rows = {}
 	for _, key in ipairs(CHOICES) do
 		local row = CreateFrame("Frame", nil, menu)
-		row:SetSize(232, 30)
+		row:SetSize(INNER, 30)
 		row.badge = ns.MakeBadge(row, key, 22)
 		row.badge:SetPoint("LEFT", 0, 0)
 		row.label = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
 		row.label:SetPoint("TOPLEFT", 34, -6)
-		row.label:SetWidth(178)
+		row.label:SetWidth(INNER - 54)
 		row.label:SetJustifyH("LEFT")
 		row.label:SetWordWrap(true)
 		row.arrow = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
 		row.arrow:SetPoint("RIGHT", 0, 0)
 		row.arrow:SetText(">")
-		row.arrow:SetTextColor(0.7, 0.68, 0.63)
+		row.arrow:SetTextColor(unpack(MUTED))
 		rows[key] = row
 	end
 
 	local list = CreateFrame("ScrollFrame", nil, menu)
 	local content = CreateFrame("Frame", nil, list)
 	content:SetPoint("TOPLEFT", list, "TOPLEFT", 0, 0)
-	content:SetSize(232, 26)
+	content:SetSize(INNER, 26)
 	list:SetScrollChild(content)
 	list:EnableMouseWheel(true)
 	list:SetScript("OnMouseWheel", function(self, delta)
@@ -624,53 +745,70 @@ function ns.CreateMenuView(parent, name)
 		self:SetVerticalScroll(self.offset)
 	end)
 	local leaves = {}
+	-- Group headings over the messages they hold, kept apart from the messages.
+	local headerHolder = CreateFrame("Frame", nil, content)
+	headerHolder:SetAllPoints(content)
+	local headers = {}
 
 	local footer = CreateFrame("Frame", nil, menu)
-	footer:SetSize(232, 28)
+	footer:SetSize(INNER, 28)
 	local footerLine = footer:CreateTexture(nil, "ARTWORK")
 	footerLine:SetPoint("TOPLEFT")
 	footerLine:SetPoint("TOPRIGHT")
 	footerLine:SetHeight(1)
-	footerLine:SetColorTexture(0.29, 0.27, 0.22, 0.7)
+	footerLine:SetColorTexture(0.72, 0.57, 0.28, 0.35)
 	local cancelBadge = ns.MakeBadge(footer, "B", 18)
 	cancelBadge:SetPoint("LEFT", 0, -4)
-	cancelBadge:SetAlpha(0.65)
 	local cancel = footer:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	cancel:SetPoint("LEFT", cancelBadge, "RIGHT", 8, 0)
 	cancel:SetText("Cancel")
-	cancel:SetTextColor(0.7, 0.68, 0.63)
+	cancel:SetTextColor(unpack(MUTED))
 	local scrollHint = footer:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	scrollHint:SetPoint("RIGHT", 0, -4)
 	scrollHint:SetText("Scroll for more")
-	scrollHint:SetTextColor(0.7, 0.68, 0.63)
-	local tabHint = menu:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	tabHint:SetPoint("TOPRIGHT", -14, -12); tabHint:SetText("LB / RB")
-	tabHint:SetTextColor(0.7, 0.68, 0.63)
+	scrollHint:SetTextColor(unpack(MUTED))
 
-	-- `lfg` shows the LFG tab even while another tab is picked.
+	-- `heading` names the open group (the breadcrumb). `lfg` shows the LFG tab
+	-- even while another tab is picked.
 	function menu:Display(node, heading, path, context, lfg)
 		path = path or ""
 		context = context or "DEFAULT"
-		title:SetText("Quick Chat")
-		-- ponytail: all five tabs overflow the HUD by ~20px once battlegrounds launch; narrow the tabs then.
-		local tabX = 14
+		local name, r, g, b, available = ns.Destination(context)
+		destination:SetText(available and "|cff9d9d9dto|r " .. name or name)
+		destination:SetTextColor(r, g, b)
+
+		shoulders.LB:SetText(KeyMarkup("LB", 18))
+		shoulders.RB:SetText(KeyMarkup("RB", 18))
+		shoulders.LB:SetPoint("LEFT", menu, "TOPLEFT", 14, -45)
+		local tabX = 40
 		for _, tabContext in ipairs(ns.CONTEXTS) do
 			local tab = tabs[tabContext]
-			tab:SetShown(tabContext ~= "LFG" or lfg or context == "LFG")
-			if tab:IsShown() then tab:SetPoint("TOPLEFT", tabX, -34); tabX = tabX + tab:GetWidth() + 2 end
+			tab:SetShown((tabContext ~= "LFG" or lfg or context == "LFG") and (tabContext ~= "RP" or ns.RoleplayEnabled() or context == "RP"))
+			if tab:IsShown() then
+				tab:SetWidth(math.max(28, tab.label:GetStringWidth() + 14))
+				tab:SetPoint("TOPLEFT", tabX, -34); tabX = tabX + tab:GetWidth() + 2
+			end
 		end
+		shoulders.RB:SetPoint("LEFT", menu, "TOPLEFT", tabX + 4, -45)
 		for tabContext, tab in pairs(tabs) do
 			local active = context == tabContext
-			tab.bg:SetColorTexture(active and 0.22 or 0.12, active and 0.2 or 0.12, active and 0.15 or 0.13, 1)
-			local available = ns.ChannelAvailable(tabContext)
-			tab.label:SetTextColor(active and 1 or (available and 0.8 or 0.5), active and 0.82 or (available and 0.8 or 0.5), active and 0.4 or (available and 0.8 or 0.5))
+			tab.bg:SetColorTexture(active and 0.3 or 0.1, active and 0.23 or 0.09, active and 0.12 or 0.08, active and 1 or 0.8)
+			tab.underline:SetShown(active)
+			if active then tab.label:SetTextColor(1, 0.82, 0.3)
+			elseif ns.ChannelAvailable(tabContext) then tab.label:SetTextColor(0.85, 0.83, 0.78)
+			else tab.label:SetTextColor(0.45, 0.44, 0.42) end
 		end
-		sequence:SetPoint("TOPLEFT", 14, -62)
+
+		local y = 66
 		sequence:SetShown(path ~= "")
-		sequence:SetText(path .. "  -  " .. heading)
-		local y = 64 + (path ~= "" and 18 or 0)
-		headerLine:SetPoint("TOPLEFT", 14, -y)
-		y = y + 5
+		if path ~= "" then
+			sequence:SetPoint("TOPLEFT", 14, -y)
+			sequence:SetText((FormatPath(path, 0)) .. "  " .. (heading or ""))
+			y = y + 20
+		end
+		y = y + 2
+		for _, row in pairs(rows) do PaintBadge(row.badge) end
+		PaintBadge(cancelBadge)
 		local compact = ns.DB and ns.DB.compact == true
 		list:SetShown(not compact)
 		scrollHint:Hide()
@@ -680,9 +818,9 @@ function ns.CreateMenuView(parent, name)
 				local child = node[key]
 				local row = rows[key]
 				row.label:SetText(child and ns.FormatMessage(ns.NodeLabel(child), context) or "—")
-				local available = ns.IsAvailable(child, context)
-				row.label:SetTextColor(available and 0.94 or 0.5, available and 0.92 or 0.5, available and 0.89 or 0.5)
-				row.badge:SetAlpha(available and 1 or 0.35)
+				local usable = ns.IsAvailable(child, context)
+				row.label:SetTextColor(usable and 0.94 or 0.5, usable and 0.92 or 0.5, usable and 0.89 or 0.5)
+				row.badge:SetAlpha(usable and 1 or 0.35)
 				row.arrow:SetShown(child ~= nil and not ns.IsMessage(child))
 				local height = math.max(30, row.label:GetStringHeight() + 12)
 				row:SetHeight(height)
@@ -690,42 +828,60 @@ function ns.CreateMenuView(parent, name)
 				y = y + height
 			end
 		else
-			local count, height = 0, 0
-			local function Walk(branch, prefix)
+			local count, headerCount, height, lastCrumb = 0, 0, 0, nil
+			local function Header(text)
+				headerCount = headerCount + 1
+				local header = headers[headerCount]
+				if not header then
+					header = headerHolder:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+					header:SetWidth(INNER); header:SetJustifyH("LEFT"); header:SetWordWrap(false)
+					headers[headerCount] = header
+				end
+				header:SetText(text); header:SetPoint("TOPLEFT", 0, -height - 8); header:Show()
+				height = height + 24
+			end
+			-- `crumb` names the subgroups between the open group and a message.
+			local function Walk(branch, prefix, crumb)
 				for _, key in ipairs(CHOICES) do
 					local child = branch[key]
 					if child then
 						local childPath = prefix .. key
+						local label = ns.FormatMessage(ns.NodeLabel(child), context)
 						if ns.IsMessage(child) then
+							if crumb ~= lastCrumb then Header(crumb or "More") end
+							lastCrumb = crumb
 							count = count + 1
-							local label = leaves[count]
-							if not label then
-								label = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
-								label:SetWidth(232); label:SetJustifyH("LEFT"); label:SetWordWrap(true)
-								leaves[count] = label
+							local leaf = leaves[count]
+							if not leaf then
+								leaf = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
+								leaf:SetWidth(INNER); leaf:SetJustifyH("LEFT"); leaf:SetWordWrap(true)
+								leaves[count] = leaf
 							end
-							local available = ns.IsAvailable(child, context)
-							local buttons = available and FormatPath(childPath, #path) or childPath
-							label:SetText(buttons .. " - " .. ns.FormatMessage(ns.NodeLabel(child), context))
-							label:SetTextColor(available and 0.94 or 0.5, available and 0.92 or 0.5, available and 0.89 or 0.5)
-							label:SetPoint("TOPLEFT", 0, -height - 4); label:Show()
-							height = height + math.max(26, label:GetStringHeight() + 8)
-						else Walk(child, childPath) end
+							local usable = ns.IsAvailable(child, context)
+							local buttons, separator = FormatPath(childPath, #path, not usable)
+							leaf:SetText(buttons .. separator .. label)
+							leaf:SetTextColor(usable and 0.94 or 0.5, usable and 0.92 or 0.5, usable and 0.89 or 0.5)
+							leaf:SetPoint("TOPLEFT", 0, -height - 4); leaf:Show()
+							height = height + math.max(26, leaf:GetStringHeight() + 8)
+						else
+							Walk(child, childPath, crumb and crumb .. " / " .. label or label)
+						end
 					end
 				end
 			end
-			Walk(node, path)
+			Walk(node, path, nil)
 			for i = count + 1, #leaves do leaves[i]:Hide() end
+			for i = headerCount + 1, #headers do headers[i]:Hide() end
 			local visibleHeight = math.min(math.max(26, height), math.max(80, UIParent:GetHeight() - y - 100))
 			content:SetHeight(math.max(26, height))
-			list:SetSize(232, visibleHeight); list:SetPoint("TOPLEFT", 14, -y)
+			list:SetSize(INNER, visibleHeight); list:SetPoint("TOPLEFT", 14, -y)
 			list.offset, list.maximum = 0, math.max(0, height - visibleHeight)
 			list:SetVerticalScroll(0)
 			scrollHint:SetShown(list.maximum > 0)
 			y = y + visibleHeight
 		end
-		footer:SetPoint("TOPLEFT", 14, -y - 4)
-		menu:SetHeight(y + 4 + 28 + 12)
+		footer:SetPoint("TOPLEFT", 14, -y - 6)
+		menu:SetHeight(y + 6 + 28 + 10)
 		menu:Show()
 	end
 	return menu
@@ -735,36 +891,36 @@ local menu = ns.CreateMenuView(UIParent, "PADChatMenu")
 menu:SetPoint("LEFT", UIParent, "LEFT", 40, 80)
 menu:SetFrameStrata("HIGH")
 menu:SetClampedToScreen(true)
+-- A quick fade in as the menu opens.
+menu:SetScript("OnUpdate", function(self, elapsed)
+	if not self.fade then return end
+	self.fade = self.fade + elapsed
+	if self.fade >= 0.12 then self.fade = nil; self:SetAlpha(1) else self:SetAlpha(self.fade / 0.12) end
+end)
 
 -- Recent whispers, docked to the right of the HUD while the Whisper tab shows.
 local whisperList = CreateFrame("Frame", "PADChatWhispers", menu)
 whisperList:SetPoint("TOPLEFT", menu, "TOPRIGHT", 6, 0)
 whisperList:SetWidth(170)
+ns.Skin(whisperList, 32)
+local whisperHint
 do
-	local edge = whisperList:CreateTexture(nil, "BACKGROUND", nil, 0)
-	edge:SetAllPoints()
-	edge:SetColorTexture(0.29, 0.27, 0.22, 0.9)
-	local bg = whisperList:CreateTexture(nil, "BACKGROUND", nil, 1)
-	bg:SetPoint("TOPLEFT", 1, -1)
-	bg:SetPoint("BOTTOMRIGHT", -1, 1)
-	bg:SetColorTexture(0.09, 0.09, 0.1, 0.96)
 	local title = whisperList:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-	title:SetPoint("TOPLEFT", 14, -12)
+	title:SetPoint("TOPLEFT", 14, -10)
 	title:SetText("Whisper to")
-	local hint = whisperList:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	hint:SetPoint("TOPRIGHT", -14, -12)
-	hint:SetText("Up / Down")
-	hint:SetTextColor(0.7, 0.68, 0.63)
-	local line = whisperList:CreateTexture(nil, "ARTWORK")
-	line:SetSize(142, 1)
-	line:SetPoint("TOPLEFT", 14, -34)
-	line:SetColorTexture(0.29, 0.27, 0.22, 0.7)
+	whisperHint = whisperList:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	whisperHint:SetPoint("TOPRIGHT", -12, -11)
+	whisperHint:SetTextColor(unpack(MUTED))
 end
 local whisperHighlight = whisperList:CreateTexture(nil, "ARTWORK")
-whisperHighlight:SetColorTexture(0.22, 0.2, 0.15, 1)
+whisperHighlight:SetColorTexture(0.3, 0.23, 0.12, 1)
+local whisperMarker = whisperList:CreateTexture(nil, "OVERLAY")
+whisperMarker:SetColorTexture(1, 0.82, 0.3, 1)
 local whisperRows = {}
 
 function whisperList:Display(names, selected)
+	local glyphs = CreateAtlasMarkup and ns.PadAtlas(KEYS.UP)
+	whisperHint:SetText(glyphs and KeyMarkup("UP", 16) .. KeyMarkup("DOWN", 16) or "Up / Down")
 	local y = 40
 	for i = 1, math.max(1, #names) do
 		local row = whisperRows[i]
@@ -781,9 +937,11 @@ function whisperList:Display(names, selected)
 		else
 			row:SetText(Ambiguate and Ambiguate(names[i], "short") or names[i])
 			if i == selected then
-				row:SetTextColor(1, 0.82, 0.4)
-				whisperHighlight:SetPoint("TOPLEFT", 14, -y)
-				whisperHighlight:SetSize(142, 22)
+				row:SetTextColor(1, 0.82, 0.3)
+				whisperHighlight:SetPoint("TOPLEFT", 10, -y)
+				whisperHighlight:SetSize(150, 22)
+				whisperMarker:SetPoint("TOPLEFT", 10, -y)
+				whisperMarker:SetSize(2, 22)
 			else
 				row:SetTextColor(0.94, 0.92, 0.89)
 			end
@@ -792,16 +950,47 @@ function whisperList:Display(names, selected)
 	end
 	for i = math.max(1, #names) + 1, #whisperRows do whisperRows[i]:Hide() end
 	whisperHighlight:SetShown(selected ~= nil)
+	whisperMarker:SetShown(selected ~= nil)
 	self:SetHeight(y + 12)
+end
+
+-- A short note where the menu was: what was sent, or why it wasn't.
+local toast = CreateFrame("Frame", "PADChatToast", UIParent)
+toast:SetFrameStrata("HIGH"); toast:SetHeight(30); toast:Hide()
+ns.Skin(toast)
+local toastIcon = toast:CreateTexture(nil, "ARTWORK")
+toastIcon:SetSize(16, 16); toastIcon:SetPoint("LEFT", 10, 0)
+local toastText = toast:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+toastText:SetPoint("LEFT", toastIcon, "RIGHT", 6, 0); toastText:SetJustifyH("LEFT"); toastText:SetWordWrap(false)
+toast:SetScript("OnUpdate", function(self, elapsed)
+	self.age = self.age + elapsed
+	if self.age >= 2.4 then self:Hide() else self:SetAlpha(math.min(1, (2.4 - self.age) / 0.6)) end
+end)
+
+function ns.ShowToast(text, sent)
+	toastIcon:SetTexture(sent and "Interface\\RaidFrame\\ReadyCheck-Ready" or "Interface\\RaidFrame\\ReadyCheck-NotReady")
+	-- Measure unbounded; a set width caps GetStringWidth.
+	toastText:SetWidth(0); toastText:SetText(text)
+	toastText:SetWidth(math.min(360, toastText:GetStringWidth() + 2))
+	toast:SetWidth(toastText:GetWidth() + 42)
+	toast:ClearAllPoints(); toast:SetPoint("LEFT", menu, "LEFT")
+	toast.age = 0; toast:SetAlpha(1); toast:Show()
 end
 
 local function UpdateMenu()
 	if not open:GetAttribute("open") then menu:Hide(); return end
 	local path = open:GetAttribute("path") or ""
 	local context = open:GetAttribute("menucontext") or "DEFAULT"
-	local node = NodeAt(path, context, open:GetAttribute("menuprofile"))
-		or NodeAt("", context, open:GetAttribute("menuprofile"))
-	menu:Display(node, path == "" and "Quick Chat" or (node.label ~= "" and node.label or nil) or "Group", path, context, open:GetAttribute("lfgopen"))
+	local profile = open:GetAttribute("menuprofile")
+	local node = NodeAt(path, context, profile) or NodeAt("", context, profile)
+	local crumbs = {}
+	for i = 1, #path do
+		local step = NodeAt(path:sub(1, i), context, profile)
+		crumbs[i] = step and ns.FormatMessage(ns.NodeLabel(step), context) or "?"
+	end
+	local opening = not menu:IsShown()
+	menu:Display(node, table.concat(crumbs, " / "), path, context, open:GetAttribute("lfgopen"))
+	if opening then menu.fade = 0; menu:SetAlpha(0); toast:Hide() end
 	local whispering = context == "WHISPER" or context == "LFG"
 	whisperList:SetShown(whispering)
 	if whispering then whisperList:Display(ns.GetWhispers(), ns.GetWhisperIndex()) end
@@ -896,6 +1085,7 @@ events:SetScript("OnEvent", function(_, event, arg1)
 		ns.DB = PADChatDB
 		if type(ns.DB.compact) ~= "boolean" then ns.DB.compact = false end
 		if type(ns.DB.enhanceLFG) ~= "boolean" then ns.DB.enhanceLFG = true end
+		if type(ns.DB.roleplay) ~= "boolean" then ns.DB.roleplay = true end
 		ns.DB.enhanceRecentAllies = nil -- setting from before the integration was removed
 		if type(ns.DB.recentTells) ~= "table" then ns.DB.recentTells = {} end
 		if type(ns.DB.menu) ~= "table" then ns.DB.menu = DeepCopy(ns.DefaultMenu) end
@@ -904,8 +1094,9 @@ events:SetScript("OnEvent", function(_, event, arg1)
 		if version < 5 then ns.UpgradeGreetings(ns.DB.menu) end
 		if version < 7 then ns.UpgradeWhisper(ns.DB.menu) end
 		if version < 8 then ns.UpgradeLFG(ns.DB.menu) end
+		if version < 9 then ns.UpgradeRoleplay(ns.DB.menu) end
 		ns.MigrateMenu(ns.DB.menu)
-		ns.DB.version = 8
+		ns.DB.version = 9
 	end
 	UpdateContextDriver()
 	PublishMenu()

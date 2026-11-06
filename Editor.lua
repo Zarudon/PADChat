@@ -43,7 +43,7 @@ local function Put(path, node)
 	else
 		if not raw then raw = { empty = true }; parent[key] = raw end
 		raw.variants = raw.variants or {}
-		raw.variants[context] = node or false
+		raw.variants[ns.VariantKey(context)] = node or false
 	end
 end
 local function IsGroup(node) return type(node) == "table" and not ns.IsMessage(node) end
@@ -162,7 +162,7 @@ end
 local editor = CreateFrame("Frame", "PADChatEditor", UIParent)
 editor:SetSize(WIDTH, HEIGHT); editor:SetPoint("CENTER"); editor:SetFrameStrata("DIALOG")
 editor:SetToplevel(true); editor:SetMovable(true); editor:SetClampedToScreen(true); editor:EnableMouse(true)
-Surface(editor, 0.09, 0.09, 0.1)
+ns.Skin(editor, 60)
 editor:Hide()
 local header = CreateFrame("Frame", nil, editor)
 header:SetPoint("TOPLEFT", 1, -1); header:SetSize(WIDTH - 2, 60)
@@ -219,8 +219,8 @@ end)
 local inherit = Button(editor, "Use inherited", 194, -130, 146, function()
 	local parent, key = Slot(selected)
 	local raw = parent and parent[key]
-	if context == "DEFAULT" or not raw or not raw.variants or raw.variants[context] == nil then return end
-	Remember(); raw.variants[context] = nil
+	if context == "DEFAULT" or not raw or not raw.variants or raw.variants[ns.VariantKey(context)] == nil then return end
+	Remember(); raw.variants[ns.VariantKey(context)] = nil
 	if not next(raw.variants) then raw.variants = nil; if raw.empty then parent[key] = nil end end
 	Changed()
 end)
@@ -312,6 +312,19 @@ local lfgToggle = Button(settings, "", settings:GetWidth() - 90, -80, 76, functi
 	ns.UpdateIntegrations(); Refresh(true)
 end)
 lfgToggle.setting = "enhanceLFG"
+local generalTitle = Text(settings, "GameFontNormal", 14, -164, settings:GetWidth() - 28, "Quick chat")
+local generalLine = settings:CreateTexture(nil, "ARTWORK")
+generalLine:SetPoint("TOPLEFT", generalTitle, "BOTTOMLEFT", 0, -6); generalLine:SetSize(settings:GetWidth() - 28, 1)
+generalLine:SetColorTexture(0.22, 0.22, 0.23, 1)
+Text(settings, "GameFontHighlight", 14, -196, settings:GetWidth() - 120, "Roleplay tab")
+local roleplayHelp = Text(settings, "GameFontHighlightSmall", 14, -218, settings:GetWidth() - 120,
+	"An RP tab beside Say with in-character greetings, banter and battle cries for your faction, spoken on /say.")
+roleplayHelp:SetWordWrap(true); roleplayHelp:SetTextColor(0.7, 0.68, 0.63)
+local roleplayToggle = Button(settings, "", settings:GetWidth() - 90, -192, 76, function()
+	ns.DB.roleplay = not ns.DB.roleplay
+	ns.MenuChanged(); Refresh(true)
+end)
+roleplayToggle.setting = "roleplay"
 Button(settings, "Done", settings:GetWidth() - 90, -settings:GetHeight() + 42, 76, function() settings:Hide() end)
 
 -- Destination picker includes empty slots and swaps, without overwriting data.
@@ -426,6 +439,18 @@ local EMOTES = {
 	{ name = "Agree", token = "AGREE" },
 	{ name = "Sigh", token = "SIGH" },
 	{ name = "Out of mana", token = "OOM" },
+	-- Roleplay favourites
+	{ name = "Hail", token = "HAIL" },
+	{ name = "Greet", token = "GREET" },
+	{ name = "Nod", token = "NOD" },
+	{ name = "No", token = "NO" },
+	{ name = "Shrug", token = "SHRUG" },
+	{ name = "Kneel", token = "KNEEL" },
+	{ name = "Curtsey", token = "CURTSEY" },
+	{ name = "Drink", token = "DRINK" },
+	{ name = "Ponder", token = "PONDER" },
+	{ name = "Flex", token = "FLEX" },
+	{ name = "Charge", token = "CHARGE" },
 }
 local EMOTE_NAMES = {}
 for _, emote in ipairs(EMOTES) do
@@ -558,6 +583,7 @@ end
 Refresh = function(textOnly)
 	compact.label:SetText(ns.DB.compact and "Compact: On" or "Compact: Off")
 	lfgToggle.label:SetText(ns.DB.enhanceLFG and "On" or "Off")
+	roleplayToggle.label:SetText(ns.DB.roleplay and "On" or "Off")
 	while #selected > 1 and not IsGroup(At(selected:sub(1, -2))) do selected = selected:sub(1, -2) end
 	local node, owned = At(selected)
 	local message, group = node and ns.IsMessage(node), IsGroup(node)
@@ -571,8 +597,11 @@ Refresh = function(textOnly)
 	inherit:SetShown(context ~= "DEFAULT")
 	local slotParent, slotKey = Slot(selected)
 	local raw = slotParent[slotKey]
-	inherit:SetEnabled(context ~= "DEFAULT" and raw and raw.variants and raw.variants[context] ~= nil or false)
-	mappingHint:SetText(context == "DEFAULT" and "Say tab · other tabs inherit these options" or (owned and "Custom tab · editing this branch" or "Inherited · customize to make changes"))
+	inherit:SetEnabled(context ~= "DEFAULT" and raw and raw.variants and raw.variants[ns.VariantKey(context)] ~= nil or false)
+	if context == "DEFAULT" then mappingHint:SetText("Say tab · other tabs inherit these options")
+	elseif context == "RP" and owned then
+		mappingHint:SetText((ns.RoleplayKey() == "RP_HORDE" and "Horde" or "Alliance") .. " roleplay phrases" .. (ns.RoleplayEnabled() and " · sent on /say" or " · tab off in Settings"))
+	else mappingHint:SetText(owned and "Custom tab · editing this branch" or "Inherited · customize to make changes") end
 	DrawTree(); undo:SetEnabled(#history > 0)
 	formTitle:SetText("|c" .. ns.KEY_COLOR[selected:sub(-1)] .. selected:sub(-1) .. "|r  " .. (node and ns.NodeLabel(node) or "Add an option"))
 	-- Keep long labels in their field; avoid a heading growing into the controls.

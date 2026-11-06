@@ -56,6 +56,7 @@ function methods:SetText(value)
 	if self.scripts.OnTextChanged then self.scripts.OnTextChanged(self, false) end
 end
 function methods:GetText() return self.text end
+function methods:GetStringWidth() return #self.text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "") * 7 end
 function methods:GetStringHeight()
 	local text = self.text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
 	return 14 * (self.wrap and self.width > 0 and math.max(1, math.ceil(#text * 7 / self.width)) or 1)
@@ -138,6 +139,9 @@ function UnitIsUnit(unit, other) return other == "player" and Member(unit) and M
 function UnitIsConnected(unit) return Member(unit)[2] end
 function GetUnitName(unit) return Member(unit)[1] end
 function UnitLevel() return 60 end
+local targetName, faction = nil, "Alliance"
+function UnitName(unit) if unit == "player" then return "Me" end return targetName end
+function UnitFactionGroup() return faction end
 function UnitClass() return "Mage", "MAGE" end
 function Ambiguate(name) return (name:gsub("%-Faerlina$", "")) end
 local ns = { BATTLEGROUNDS_ENABLED = true } -- keep the post-launch BG paths covered
@@ -244,7 +248,8 @@ assert(PADChatOpen:GetAttribute("menucontext") == "DEFAULT")
 assert(PADChatOpen.bindings.PADLSHOULDER == "LB" and PADChatOpen.bindings.PADRSHOULDER == "RB")
 assert(PADChatOpen.bindings["CTRL-PAD1"] == "A" and PADChatOpen.bindings["ALT-CTRL-SHIFT-PADRSHOULDER"] == "RB")
 Pad("X"); Pad("A"); Pad("RB")
-assert(PADChatOpen:GetAttribute("menucontext") == "GROUP" and PADChatOpen:GetAttribute("path") == "")
+assert(PADChatOpen:GetAttribute("menucontext") == "RP" and PADChatOpen:GetAttribute("path") == "")
+Pad("RB"); assert(PADChatOpen:GetAttribute("menucontext") == "GROUP")
 Pad("RB"); assert(PADChatOpen:GetAttribute("menucontext") == "RAID")
 Pad("RB"); assert(PADChatOpen:GetAttribute("menucontext") == "WHISPER")
 assert(PADChatOpen.bindings.PADDUP == "UP" and PADChatOpen.bindings["SHIFT-PADDDOWN"] == "DOWN")
@@ -253,10 +258,15 @@ assert(PADChatOpen.bindings.PADDUP == nil and PADChatOpen.bindings["SHIFT-PADDDO
 Pad("LB"); assert(PADChatOpen:GetAttribute("menucontext") == "WHISPER")
 Pad("LB"); assert(PADChatOpen:GetAttribute("menucontext") == "RAID")
 Pad("LB"); assert(PADChatOpen:GetAttribute("menucontext") == "GROUP")
+Pad("LB"); assert(PADChatOpen:GetAttribute("menucontext") == "RP")
 Pad("LB"); assert(PADChatOpen:GetAttribute("menucontext") == "DEFAULT")
 PADChatOpen:SetAttribute("battlegrounds", false) -- beta: the BG tab is skipped
-Pad("RB"); Pad("RB"); assert(PADChatOpen:GetAttribute("menucontext") == "WHISPER")
+Pad("RB"); Pad("RB"); Pad("RB"); assert(PADChatOpen:GetAttribute("menucontext") == "WHISPER")
 Pad("LB"); assert(PADChatOpen:GetAttribute("menucontext") == "GROUP")
+PADChatOpen:SetAttribute("roleplay", false) -- Roleplay tab turned off in Settings
+Pad("LB"); assert(PADChatOpen:GetAttribute("menucontext") == "DEFAULT")
+Pad("RB"); assert(PADChatOpen:GetAttribute("menucontext") == "GROUP")
+PADChatOpen:SetAttribute("roleplay", true)
 PADChatOpen:SetAttribute("battlegrounds", true)
 Pad("B"); Released()
 Pad("LeftButton"); Pad("LeftButton"); Released()
@@ -434,9 +444,9 @@ for _, scenario in ipairs({
 	combat = false
 end
 Group("PARTY"); combat = true
-Pad("LeftButton"); Pad("LB"); Pad("A"); Pad("A")
+Pad("LeftButton"); Pad("LB"); Pad("LB"); Pad("A"); Pad("A")
 assert(sent[2] == "SAY"); Released()
-Group(); Pad("LeftButton"); Pad("RB")
+Group(); Pad("LeftButton"); Pad("RB"); Pad("RB")
 local beforeUnavailable = sent
 Pad("A"); Pad("A"); assert(sent == beforeUnavailable); Released()
 combat = false
@@ -532,7 +542,7 @@ Pad("LeftButton"); Pad("X"); Pad("A")
 assert(LeafLabels(PADChatMenu)[1] == "XAA - Thanks for the group")
 Pad("A")
 assert(sent[1] == "Thanks for the group!" and sent[2] == "PARTY")
-Pad("LeftButton"); Pad("LB"); Pad("X"); Pad("A")
+Pad("LeftButton"); Pad("LB"); Pad("LB"); Pad("X"); Pad("A")
 assert(LeafLabels(PADChatMenu)[1] == "XAA - Hello", "Switching to Say must restore its own mapping")
 Pad("A"); assert(sent[1] == "Hello" and sent[2] == "SAY")
 Group("RAID"); Pad("LeftButton"); Pad("X"); Pad("A"); Pad("A")
@@ -650,7 +660,7 @@ view:Hide()
 ns.DefaultMenu = shippedDefaults
 PADChatDB = nil; Event("ADDON_LOADED", "PADChat")
 ns.MenuChanged()
-assert(ns.DB.version == 8 and ns.savedLoaded == false)
+assert(ns.DB.version == 9 and ns.savedLoaded == false)
 assert(ns.ResolveNode(ns.GetMenu(), "GROUP").X.A.A.emote == "OOM")
 Group("PARTY"); combat = true
 Pad("LeftButton"); Pad("X"); Pad("A")
@@ -726,7 +736,7 @@ for _, key in ipairs(ns.CHOICES) do legacyMenu[key].variants = nil end
 legacyMenu.X.variants = { GROUP = { label = "My group", A = { label = "Custom", text = "Custom!" } }, RAID = false }
 legacyMenu.Y.A.text = "My help"
 PADChatDB = { menu = legacyMenu, compact = true, version = 2 }; Event("ADDON_LOADED", "PADChat")
-assert(ns.DB.version == 8 and ns.DB.compact)
+assert(ns.DB.version == 9 and ns.DB.compact)
 assert(ns.DB.menu.X.variants.GROUP.A.text == "Custom!" and ns.DB.menu.X.variants.RAID == false)
 assert(ns.DB.menu.Y.A.text == "My help" and ns.DB.menu.Y.variants.GROUP == nil and ns.DB.menu.Y.variants.RAID == nil)
 assert(ns.DB.menu.A.variants.RAID.A.text == "2-3 inc {location}")
@@ -741,7 +751,7 @@ oldGreet.X.A.A = { label = "Hello", text = "Well met!", chat = "SAY" }
 oldGreet.X.A.X = { label = "Goodbye", text = "See ya!", chat = "SAY" }
 oldGreet.X.A.Y = { label = "Wave", text = "waves.", chat = "SAY" }
 PADChatDB = { menu = oldGreet, compact = false, version = 4 }; Event("ADDON_LOADED", "PADChat")
-assert(ns.DB.version == 8 and ns.DB.menu.X.A.A.text == "Hello" and ns.DB.menu.X.A.X.text == "See ya!")
+assert(ns.DB.version == 9 and ns.DB.menu.X.A.A.text == "Hello" and ns.DB.menu.X.A.X.text == "See ya!")
 assert(ns.DB.menu.X.A.Y.text == nil and ns.DB.menu.X.A.Y.emote == "WAVE" and ns.DB.menu.X.A.Y ~= shippedDefaults.X.A.Y)
 
 -- Wave can't reach a whisper target, so the Whisper tab swaps it for a thank
@@ -749,7 +759,7 @@ assert(ns.DB.menu.X.A.Y.text == nil and ns.DB.menu.X.A.Y.emote == "WAVE" and ns.
 local preWhisper = ns.CopyMenu(shippedDefaults)
 preWhisper.X.A.X.variants, preWhisper.X.A.Y.variants = nil, nil
 PADChatDB = { menu = preWhisper, compact = false, version = 5 }; Event("ADDON_LOADED", "PADChat")
-assert(ns.DB.version == 8 and ns.DB.menu.X.A.Y.variants.WHISPER.text == "Thanks for the group!")
+assert(ns.DB.version == 9 and ns.DB.menu.X.A.Y.variants.WHISPER.text == "Thanks for the group!")
 assert(ns.DB.menu.X.A.X.variants.WHISPER.text == "Farewell" and ns.DB.menu.X.A.X.variants.WHISPER.emote == nil)
 assert(ns.DB.menu.X.A.Y.variants ~= shippedDefaults.X.A.Y.variants)
 local editedWave = ns.CopyMenu(shippedDefaults)
@@ -770,15 +780,15 @@ assert(ns.ResolveNode(ns.GetMenu(), "DEFAULT").X.A.Y.emote == "WAVE")
 assert(ns.ResolveNode(ns.GetMenu(), "WHISPER").X.A.Y.text == "Thanks for the group!")
 assert(ns.ResolveNode(ns.GetMenu(), "WHISPER").X.A.A.text == "Hello", "Whisper inherits Say, not Group")
 members = { { "Erin", true } }; Group("PARTY"); combat = true
-Pad("LeftButton"); Pad("LB"); Pad("LB"); Pad("X"); Pad("A")
+Pad("LeftButton"); Pad("LB"); Pad("LB"); Pad("LB"); Pad("X"); Pad("A")
 assert(table.concat(LeafLabels(PADChatMenu), ",") == "XAA - Hello,XAX - Goodbye,XAY - Thanks for the group")
 local emotesBefore = #emotes
 Pad("Y"); assert(sent[1] == "Thanks for the group!" and sent[2] == "WHISPER" and sent[3] == "Erin" and #emotes == emotesBefore)
 Released()
-Pad("LeftButton"); Pad("LB"); Pad("LB"); Pad("X"); Pad("A"); Pad("X")
+Pad("LeftButton"); Pad("LB"); Pad("LB"); Pad("LB"); Pad("X"); Pad("A"); Pad("X")
 assert(sent[1] == "Farewell" and sent[2] == "WHISPER" and #emotes == emotesBefore, "Whisper Goodbye doesn't wave")
 Released()
-Pad("LeftButton"); Pad("LB"); Pad("X"); Pad("A"); Pad("X")
+Pad("LeftButton"); Pad("LB"); Pad("LB"); Pad("X"); Pad("A"); Pad("X")
 assert(sent[1] == "Farewell" and sent[2] == "SAY" and emotes[#emotes] == "WAVE", "Say Goodbye still waves")
 Released(); combat = false; Group()
 Click(Button("Whisper")); Select("XAY")
@@ -844,13 +854,65 @@ versionThree.X.variants.RAID.A.text = "Custom defense."
 versionThree.Y.variants.GROUP = nil
 PADChatDB = { menu = versionThree, compact = false, version = 3 }
 Event("ADDON_LOADED", "PADChat")
-assert(ns.DB.version == 8 and ns.DB.menu.A.variants.RAID.battlegrounds[489].A.text == "Flag going ramp!")
+assert(ns.DB.version == 9 and ns.DB.menu.A.variants.RAID.battlegrounds[489].A.text == "Flag going ramp!")
 assert(ns.DB.menu.X.variants.RAID.A.text == "Custom defense." and ns.DB.menu.X.variants.RAID.battlegrounds == nil)
 assert(ns.DB.menu.Y.variants.GROUP == nil)
 ns.DB.menu.A.variants.RAID.battlegrounds[489].A.text = "Custom flag call!"
 ns.DB.version = 3; Event("ADDON_LOADED", "PADChat")
 assert(ns.DB.menu.A.variants.RAID.battlegrounds[489].A.text == "Custom flag call!")
 assert(shippedDefaults.A.variants.RAID.battlegrounds[489].A.text == "Flag going ramp!")
+
+-- The Roleplay tab sits between Say and Group and speaks in character on /say,
+-- with each faction's own phrases. {TARGET} and {NAME} fill in names.
+ns.ResetToDefaults(); Group(); instanceID = 529; Event("ZONE_CHANGED_NEW_AREA")
+combat = true
+Pad("LeftButton"); assert(Find(function(o) return o.parent == PADChatMenu and o.text == "|cff9d9d9dto|r Say" end))
+Pad("RB"); assert(PADChatOpen:GetAttribute("menucontext") == "RP")
+assert(LeafLabels(PADChatMenu)[1] == "AAA - Well met, friend")
+assert(Find(function(o) return o.kind == "Text" and o.text == "Greetings / Hail" end), "Messages sit under their group's heading")
+Pad("A"); Pad("A"); Pad("A")
+assert(sent[1] == "Well met, friend!" and sent[2] == "SAY" and emotes[#emotes] == "HAIL"); Released()
+assert(Find(function(o) return o.parent == PADChatToast and o.text == "Say: Well met, friend!" end), "A sent message is confirmed")
+targetName = "Bob"
+Pad("LeftButton"); Pad("RB"); Pad("A"); Pad("Y"); Pad("Y"); assert(sent[1] == "I am Me. A pleasure."); Released()
+Pad("LeftButton"); Pad("RB"); Pad("X"); Pad("Y"); Pad("X"); assert(sent[1] == "Where are you headed, Bob?"); Released()
+targetName = nil
+Pad("LeftButton"); Pad("RB"); Pad("Y"); Pad("X"); Pad("A")
+assert(sent[1] == "For the Alliance!" and sent[2] == "SAY" and emotes[#emotes] == "ROAR"); Released()
+Pad("LeftButton"); Pad("RB"); Pad("RB")
+assert(Find(function(o) return o.parent == PADChatMenu and o.text == "Join a group first" end), "An unusable tab says why")
+Pad("B"); Released()
+combat = false
+faction = "Horde"; Event("PLAYER_ENTERING_WORLD")
+combat = true
+Pad("LeftButton"); Pad("RB"); Pad("Y"); Pad("X"); Pad("A"); assert(sent[1] == "For the Horde!" and emotes[#emotes] == "ROAR"); Released()
+Pad("LeftButton"); Pad("RB"); Pad("X"); Pad("X"); Pad("X"); assert(sent[1] == "A toast! To the Horde!"); Released()
+combat = false
+-- Edits on the Roleplay tab change the current faction's phrases only.
+Click(Button("RP"))
+if not Find(function(o) return o.path == "AA" and o.selection ~= nil end, true) then Expand("A") end
+if not Find(function(o) return o.path == "AAA" and o.selection ~= nil end, true) then Expand("AA") end
+Select("AAA"); Type(Field(-154), "Throm-Ka, warrior.")
+assert(ns.DB.menu.A.variants.RP_HORDE.A.A.text == "Throm-Ka, warrior." and ns.DB.menu.A.variants.RP.A.A.text == "Well met, {TARGET}!")
+assert(ns.DB.menu.A.A.text == "Yes!", "Say keeps its own options")
+Pad("LeftButton"); Pad("RB"); Pad("A"); Pad("A"); Pad("A"); assert(sent[1] == "Throm-Ka, warrior."); Released()
+Undo(); assert(ns.DB.menu.A.variants.RP_HORDE.A.A.text == "Throm-Ka, {TARGET}.")
+faction = "Alliance"; Event("PLAYER_ENTERING_WORLD"); Click(Button("Say"))
+-- Settings can turn the tab off; LB/RB then skip it and the HUD hides it.
+Click(Button("Settings")); assert(Toggle("roleplay").label.text == "On"); Click(Toggle("roleplay"))
+assert(ns.DB.roleplay == false and PADChatOpen:GetAttribute("roleplay") == false)
+Pad("LeftButton"); Pad("RB"); assert(PADChatOpen:GetAttribute("menucontext") == "GROUP", "A turned-off Roleplay tab is skipped")
+assert(not Find(function(o) return o.kind == "Text" and o.parent.parent == PADChatMenu and o.text == "RP" end, true))
+Pad("B"); Released()
+Click(Toggle("roleplay")); assert(ns.DB.roleplay and PADChatOpen:GetAttribute("roleplay")); Click(Button("Done"))
+-- Saves from before the Roleplay tab gain both factions' phrases.
+local preRoleplay = ns.CopyMenu(shippedDefaults)
+for _, key in ipairs(ns.CHOICES) do preRoleplay[key].variants.RP, preRoleplay[key].variants.RP_HORDE = nil, nil end
+preRoleplay.A.A.text = "Yep!"
+PADChatDB = { menu = preRoleplay, compact = false, version = 8 }; Event("ADDON_LOADED", "PADChat")
+assert(ns.DB.version == 9 and ns.DB.roleplay == true and ns.DB.menu.A.A.text == "Yep!")
+assert(ns.ResolveNode(ns.GetMenu(), "RP").A.A.A.text == "Well met, {TARGET}!")
+assert(ns.DB.menu.Y.variants.RP_HORDE.X.A.text == "For the Horde!" and ns.DB.menu.A.variants.RP ~= shippedDefaults.A.variants.RP)
 
 assert(next(SlashCmdList) == nil, "slash commands taint Forever's gamepad UI")
 

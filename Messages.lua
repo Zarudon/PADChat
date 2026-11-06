@@ -13,7 +13,9 @@
 -- clears a slot.
 -- A message sends chat text, an `emote` token, or both: "Wave" is emote-only
 -- and says nothing. Chat text can hold {location}, {LEVEL} and {CLASS}
--- placeholders. The LFG tab (`variants.LFG`) inherits Whisper.
+-- placeholders, plus {TARGET} and {NAME}. The LFG tab (`variants.LFG`)
+-- inherits Whisper; the Roleplay tab (`variants.RP`, `variants.RP_HORDE`)
+-- has its own phrases, sent on /say.
 -- `battlegrounds[instanceID]` supplies a menu for a specific battleground.
 -- On a PlayStation pad A = Cross, X = Square, Y = Triangle, B = Circle.
 
@@ -106,4 +108,98 @@ ns.DefaultMenu.X.variants.RAID.battlegrounds = {
 		X = { label = "Intercept enemy carrier", text = "Intercept the enemy flag carrier!" },
 		Y = { label = "Return our flag", text = "Return our flag!" },
 	},
+}
+
+-- The Roleplay tab speaks in character on /say. It doesn't inherit Say: each
+-- top slot carries its own `variants.RP` (Alliance) or `variants.RP_HORDE`
+-- (Horde) branch, picked by the character's faction. {TARGET} is your
+-- target's name ("friend" with no target) and {NAME} is your own.
+local function Courtesy()
+	return { label = "Courtesy",
+		A = { label = "My thanks", text = "You have my thanks.", emote = "THANK" },
+		X = { label = "At your service", text = "At your service.", emote = "BOW" },
+		Y = { label = "Introduce yourself", text = "I am {NAME}. A pleasure." },
+	}
+end
+local function Banter(toast)
+	return { label = "Banter",
+		A = { label = "Answers",
+			A = { label = "Aye", text = "Aye.", emote = "NOD" },
+			X = { label = "Nay", text = "Nay, I think not.", emote = "NO" },
+			Y = { label = "Who can say?", text = "Who can say?", emote = "SHRUG" },
+		},
+		X = { label = "Tavern",
+			A = { label = "A round for all", text = "Barkeep! A round for my friends!", emote = "CHEER" },
+			X = { label = "Raise a toast", text = toast, emote = "DRINK" },
+			Y = { label = "Pull up a chair", text = "Pull up a chair, friend. Rest your feet." },
+		},
+		Y = { label = "Questions",
+			A = { label = "What news?", text = "What news from the road?" },
+			X = { label = "Where to?", text = "Where are you headed, {TARGET}?" },
+			Y = { label = "Need a hand?", text = "Need a hand with that?" },
+		},
+	}
+end
+local function Warnings()
+	return { label = "Warnings",
+		A = { label = "Watch yourself", text = "Watch yourself out there." },
+		X = { label = "Something's amiss", text = "Something is amiss here..." },
+		Y = { label = "Stay close", text = "Danger ahead. Stay close." },
+	}
+end
+
+ns.DefaultMenu.A.variants.RP = { label = "Greetings",
+	A = { label = "Hail",
+		A = { label = "Well met, {TARGET}", text = "Well met, {TARGET}!", emote = "HAIL" },
+		X = { label = "Light be with you", text = "Light be with you.", emote = "BOW" },
+		Y = { label = "Greetings, traveler", text = "Greetings, traveler. Welcome.", emote = "WAVE" },
+	},
+	X = { label = "Farewell",
+		A = { label = "Safe travels", text = "Safe travels, {TARGET}.", emote = "WAVE" },
+		X = { label = "Light guide you", text = "May the Light guide your path.", emote = "BOW" },
+		Y = { label = "Until we meet again", text = "Until we meet again." },
+	},
+	Y = Courtesy(),
+}
+ns.DefaultMenu.X.variants.RP = Banter("A toast! To the Alliance!")
+ns.DefaultMenu.Y.variants.RP = { label = "Duty",
+	A = { label = "Guard",
+		A = { label = "Move along", text = "Move along, citizen." },
+		X = { label = "Keep out of trouble", text = "Keep out of trouble, you hear?" },
+		Y = { label = "Halt!", text = "Halt! State your business." },
+	},
+	X = { label = "Battle cry",
+		A = { label = "For the Alliance!", text = "For the Alliance!", emote = "ROAR" },
+		X = { label = "Light give me strength", text = "Light give me strength!" },
+		Y = { label = "Hold the line", text = "Stand fast! Hold the line!" },
+	},
+	Y = Warnings(),
+}
+
+ns.DefaultMenu.A.variants.RP_HORDE = { label = "Greetings",
+	A = { label = "Hail",
+		A = { label = "Throm-Ka, {TARGET}", text = "Throm-Ka, {TARGET}.", emote = "HAIL" },
+		X = { label = "Strength and honor", text = "Strength and honor.", emote = "SALUTE" },
+		Y = { label = "Aka'Magosh", text = "Aka'Magosh. Blessings upon you.", emote = "BOW" },
+	},
+	X = { label = "Farewell",
+		A = { label = "Safe travels", text = "Safe travels, {TARGET}.", emote = "WAVE" },
+		X = { label = "Spirits guide you", text = "May the spirits guide you.", emote = "BOW" },
+		Y = { label = "Until we meet again", text = "Until we meet again." },
+	},
+	Y = Courtesy(),
+}
+ns.DefaultMenu.X.variants.RP_HORDE = Banter("A toast! To the Horde!")
+ns.DefaultMenu.Y.variants.RP_HORDE = { label = "Duty",
+	A = { label = "Guard",
+		A = { label = "Keep moving", text = "Keep moving, whelp." },
+		X = { label = "No trouble here", text = "No trouble here. Understood?" },
+		Y = { label = "Halt!", text = "Halt! State your business." },
+	},
+	X = { label = "Battle cry",
+		A = { label = "For the Horde!", text = "For the Horde!", emote = "ROAR" },
+		X = { label = "Lok'tar ogar!", text = "Lok'tar ogar! Victory or death!" },
+		Y = { label = "Blood and thunder", text = "Blood and thunder!" },
+	},
+	Y = Warnings(),
 }

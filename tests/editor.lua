@@ -919,6 +919,23 @@ assert(ns.DB.version == 10 and ns.DB.roleplay == true and ns.DB.menu.A.A.text ==
 assert(ns.ResolveNode(ns.GetMenu(), "RP").A.A.A.text == "Well met, {TARGET}!")
 assert(ns.DB.menu.Y.variants.RP_HORDE.X.A.text == "For the Horde!" and ns.DB.menu.A.variants.RP ~= shippedDefaults.A.variants.RP)
 
+-- In instances the client can return a protected "secret" value for a unit's
+-- name. {TARGET} falls back to "friend" instead of breaking the menu.
+ns.ResetToDefaults(); Group(); combat = true
+targetName = newproxy()
+assert(ns.FormatMessage("Well met, {TARGET}!", "RP") == "Well met, friend!")
+Pad("LeftButton"); Pad("RB"); assert(LeafLabels(PADChatMenu)[1] == "AAA - Well met, friend")
+Pad("A"); Pad("A"); Pad("A"); assert(sent[1] == "Well met, friend!"); Released()
+targetName = nil
+-- Any other error while drawing is reported, and the menu still follows the
+-- buttons: B closes it and releases them.
+local realFormat = ns.FormatMessage
+PADChatEditor:Hide(); ns.FormatMessage = function() error("boom") end
+Pad("LeftButton"); assert(PADChatOpen:GetAttribute("open"))
+Pad("B"); assert(not PADChatOpen.bound)
+ns.FormatMessage = realFormat; PADChatEditor:Show()
+combat = false
+
 -- The Guild tab follows Group, inherits Say (not Group), and sends to /g. Its
 -- Callout slot holds guild calls. Out of a guild it says so and sends nothing.
 ns.ResetToDefaults(); Group(); combat = true

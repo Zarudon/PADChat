@@ -142,6 +142,14 @@ function ns.GetBattlegroundNode(node, context, instanceID)
 	return node.battlegrounds[instanceID] or node
 end
 
+-- A unit's name, or `fallback`. Inside instances the client can hand addons a
+-- protected "secret" value instead of a name, which string functions reject.
+local function SafeName(unit, fallback)
+	local ok, name = pcall(UnitName, unit)
+	if not ok or (issecretvalue and issecretvalue(name)) or type(name) ~= "string" or name == "" then return fallback end
+	return name
+end
+
 local AB_LOCATIONS = { Blacksmith = "BS", ["Lumber Mill"] = "LM", ["Gold Mine"] = "GM", Farm = "Farm", Stables = "ST" }
 function ns.FormatMessage(text, context)
 	local location = "here"
@@ -151,9 +159,8 @@ function ns.FormatMessage(text, context)
 		-- coordinates when supporting other locales or objective boundaries.
 		if instanceID == 529 then location = AB_LOCATIONS[GetSubZoneText()] or "here" end
 	end
-	local target = UnitName("target") or "friend"
 	return (text:gsub("{location}", location):gsub("{LEVEL}", UnitLevel("player")):gsub("{CLASS}", (UnitClass("player")))
-		:gsub("{TARGET}", target):gsub("{NAME}", (UnitName("player"))))
+		:gsub("{TARGET}", SafeName("target", "friend")):gsub("{NAME}", SafeName("player", "me")))
 end
 
 -- A variant replaces one option (including its children). Missing variants
@@ -1015,13 +1022,22 @@ local function UpdateMenu()
 end
 ns.UpdateMenu = UpdateMenu
 
+-- An error while sending or drawing is reported, but never stops the rest of
+-- the press: the menu must keep following the secure state.
+local function Guarded(fn, ...)
+	local ok, err = pcall(fn, ...)
+	if not ok then
+		if geterrorhandler then geterrorhandler()(err) else Print("|cffff5050Error:|r " .. tostring(err)) end
+	end
+end
+
 -- Runs after the secure snippet, inside the same button press.
 open:HookScript("OnClick", function(self)
 	local seq = self:GetAttribute("sentseq") or 0
 	if seq ~= lastSeq then
 		lastSeq = seq
 		local context = self:GetAttribute("sentcontext")
-		SendNode(NodeAt(self:GetAttribute("sentpath") or "", context, self:GetAttribute("sentprofile")), context)
+		Guarded(SendNode, NodeAt(self:GetAttribute("sentpath") or "", context, self:GetAttribute("sentprofile")), context)
 	end
 	if self:GetAttribute("open") then
 		whisperSnapshot = whisperSnapshot or TakeSnapshot()
@@ -1029,7 +1045,7 @@ open:HookScript("OnClick", function(self)
 		whisperSnapshot = nil
 	end
 	PublishMenu()
-	UpdateMenu()
+	Guarded(UpdateMenu)
 end)
 
 ------------------------------------------------------------------------

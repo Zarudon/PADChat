@@ -142,6 +142,8 @@ function UnitLevel() return 60 end
 local targetName, faction = nil, "Alliance"
 function UnitName(unit) if unit == "player" then return "Me" end return targetName end
 function UnitFactionGroup() return faction end
+local guilded = false
+function IsInGuild() return guilded end
 function UnitClass() return "Mage", "MAGE" end
 function Ambiguate(name) return (name:gsub("%-Faerlina$", "")) end
 local ns = { BATTLEGROUNDS_ENABLED = true } -- keep the post-launch BG paths covered
@@ -250,6 +252,7 @@ assert(PADChatOpen.bindings["CTRL-PAD1"] == "A" and PADChatOpen.bindings["ALT-CT
 Pad("X"); Pad("A"); Pad("RB")
 assert(PADChatOpen:GetAttribute("menucontext") == "RP" and PADChatOpen:GetAttribute("path") == "")
 Pad("RB"); assert(PADChatOpen:GetAttribute("menucontext") == "GROUP")
+Pad("RB"); assert(PADChatOpen:GetAttribute("menucontext") == "GUILD")
 Pad("RB"); assert(PADChatOpen:GetAttribute("menucontext") == "RAID")
 Pad("RB"); assert(PADChatOpen:GetAttribute("menucontext") == "WHISPER")
 assert(PADChatOpen.bindings.PADDUP == "UP" and PADChatOpen.bindings["SHIFT-PADDDOWN"] == "DOWN")
@@ -257,11 +260,13 @@ Pad("RB"); assert(PADChatOpen:GetAttribute("menucontext") == "DEFAULT")
 assert(PADChatOpen.bindings.PADDUP == nil and PADChatOpen.bindings["SHIFT-PADDDOWN"] == nil, "D-pad is only taken on the Whisper tab")
 Pad("LB"); assert(PADChatOpen:GetAttribute("menucontext") == "WHISPER")
 Pad("LB"); assert(PADChatOpen:GetAttribute("menucontext") == "RAID")
+Pad("LB"); assert(PADChatOpen:GetAttribute("menucontext") == "GUILD")
 Pad("LB"); assert(PADChatOpen:GetAttribute("menucontext") == "GROUP")
 Pad("LB"); assert(PADChatOpen:GetAttribute("menucontext") == "RP")
 Pad("LB"); assert(PADChatOpen:GetAttribute("menucontext") == "DEFAULT")
 PADChatOpen:SetAttribute("battlegrounds", false) -- beta: the BG tab is skipped
-Pad("RB"); Pad("RB"); Pad("RB"); assert(PADChatOpen:GetAttribute("menucontext") == "WHISPER")
+Pad("RB"); Pad("RB"); Pad("RB"); Pad("RB"); assert(PADChatOpen:GetAttribute("menucontext") == "WHISPER")
+Pad("LB"); assert(PADChatOpen:GetAttribute("menucontext") == "GUILD")
 Pad("LB"); assert(PADChatOpen:GetAttribute("menucontext") == "GROUP")
 PADChatOpen:SetAttribute("roleplay", false) -- Roleplay tab turned off in Settings
 Pad("LB"); assert(PADChatOpen:GetAttribute("menucontext") == "DEFAULT")
@@ -455,7 +460,7 @@ combat = false
 -- manual tab switching works immediately, and combat end refreshes the driver.
 combat = true; Group(nil, "RAID", "pvp"); Event("ZONE_CHANGED_NEW_AREA")
 Pad("LeftButton"); assert(PADChatOpen:GetAttribute("menucontext") == "GROUP")
-Pad("RB"); Pad("A"); Pad("A"); assert(sent[2] == "INSTANCE_CHAT"); Released()
+Pad("RB"); Pad("RB"); Pad("A"); Pad("A"); assert(sent[2] == "INSTANCE_CHAT"); Released()
 combat = false; Event("PLAYER_REGEN_ENABLED")
 Pad("LeftButton"); assert(PADChatOpen:GetAttribute("menucontext") == "RAID")
 Pad("B"); Released(); Group()
@@ -556,7 +561,7 @@ Select("X"); Click(Button("Battleground")); Click(Button("Customize option"))
 Select("XAA"); Type(Field(-154), "Thanks for the raid!")
 Group(nil, "RAID", "pvp"); Pad("LeftButton"); Pad("X"); Pad("A"); Pad("A")
 assert(sent[1] == "Thanks for the raid!" and sent[2] == "INSTANCE_CHAT")
-Pad("LeftButton"); Pad("LB"); Pad("X"); Pad("A")
+Pad("LeftButton"); Pad("LB"); Pad("LB"); Pad("X"); Pad("A")
 assert(LeafLabels(PADChatMenu)[1] == "XAA - Thanks for the group", "Switching from Battleground must restore Group's mapping")
 Pad("A"); assert(sent[1] == "Thanks for the group!" and sent[2] == "INSTANCE_CHAT")
 Group("PARTY"); Pad("LeftButton"); Pad("X"); Pad("A"); Pad("A")
@@ -660,7 +665,7 @@ view:Hide()
 ns.DefaultMenu = shippedDefaults
 PADChatDB = nil; Event("ADDON_LOADED", "PADChat")
 ns.MenuChanged()
-assert(ns.DB.version == 9 and ns.savedLoaded == false)
+assert(ns.DB.version == 10 and ns.savedLoaded == false)
 assert(ns.ResolveNode(ns.GetMenu(), "GROUP").X.A.A.emote == "OOM")
 Group("PARTY"); combat = true
 Pad("LeftButton"); Pad("X"); Pad("A")
@@ -736,7 +741,7 @@ for _, key in ipairs(ns.CHOICES) do legacyMenu[key].variants = nil end
 legacyMenu.X.variants = { GROUP = { label = "My group", A = { label = "Custom", text = "Custom!" } }, RAID = false }
 legacyMenu.Y.A.text = "My help"
 PADChatDB = { menu = legacyMenu, compact = true, version = 2 }; Event("ADDON_LOADED", "PADChat")
-assert(ns.DB.version == 9 and ns.DB.compact)
+assert(ns.DB.version == 10 and ns.DB.compact)
 assert(ns.DB.menu.X.variants.GROUP.A.text == "Custom!" and ns.DB.menu.X.variants.RAID == false)
 assert(ns.DB.menu.Y.A.text == "My help" and ns.DB.menu.Y.variants.GROUP == nil and ns.DB.menu.Y.variants.RAID == nil)
 assert(ns.DB.menu.A.variants.RAID.A.text == "2-3 inc {location}")
@@ -751,7 +756,7 @@ oldGreet.X.A.A = { label = "Hello", text = "Well met!", chat = "SAY" }
 oldGreet.X.A.X = { label = "Goodbye", text = "See ya!", chat = "SAY" }
 oldGreet.X.A.Y = { label = "Wave", text = "waves.", chat = "SAY" }
 PADChatDB = { menu = oldGreet, compact = false, version = 4 }; Event("ADDON_LOADED", "PADChat")
-assert(ns.DB.version == 9 and ns.DB.menu.X.A.A.text == "Hello" and ns.DB.menu.X.A.X.text == "See ya!")
+assert(ns.DB.version == 10 and ns.DB.menu.X.A.A.text == "Hello" and ns.DB.menu.X.A.X.text == "See ya!")
 assert(ns.DB.menu.X.A.Y.text == nil and ns.DB.menu.X.A.Y.emote == "WAVE" and ns.DB.menu.X.A.Y ~= shippedDefaults.X.A.Y)
 
 -- Wave can't reach a whisper target, so the Whisper tab swaps it for a thank
@@ -759,7 +764,7 @@ assert(ns.DB.menu.X.A.Y.text == nil and ns.DB.menu.X.A.Y.emote == "WAVE" and ns.
 local preWhisper = ns.CopyMenu(shippedDefaults)
 preWhisper.X.A.X.variants, preWhisper.X.A.Y.variants = nil, nil
 PADChatDB = { menu = preWhisper, compact = false, version = 5 }; Event("ADDON_LOADED", "PADChat")
-assert(ns.DB.version == 9 and ns.DB.menu.X.A.Y.variants.WHISPER.text == "Thanks for the group!")
+assert(ns.DB.version == 10 and ns.DB.menu.X.A.Y.variants.WHISPER.text == "Thanks for the group!")
 assert(ns.DB.menu.X.A.X.variants.WHISPER.text == "Farewell" and ns.DB.menu.X.A.X.variants.WHISPER.emote == nil)
 assert(ns.DB.menu.X.A.Y.variants ~= shippedDefaults.X.A.Y.variants)
 local editedWave = ns.CopyMenu(shippedDefaults)
@@ -803,8 +808,8 @@ local readsBeforeWarsong = subzoneReads
 combat = true; Pad("LeftButton")
 assert(PADChatOpen:GetAttribute("menucontext") == "RAID" and PADChatOpen:GetAttribute("menuprofile") == "WSG")
 assert(table.concat(LeafLabels(PADChatMenu), ",") == "AA - Flag going ramp,AX - Flag going tunnel,AY - Flag going graveyard,XA - Escort our carrier,XX - Intercept enemy carrier,XY - Return our flag,YA - Regroup,YX - Need healing,YY - Need mana")
-Pad("LB"); assert(PADChatOpen:GetAttribute("menucontext") == "GROUP")
-Pad("RB"); assert(LeafLabels(PADChatMenu)[1] == "AA - Flag going ramp")
+Pad("LB"); Pad("LB"); assert(PADChatOpen:GetAttribute("menucontext") == "GROUP")
+Pad("RB"); Pad("RB"); assert(LeafLabels(PADChatMenu)[1] == "AA - Flag going ramp")
 Pad("B"); Released()
 for _, call in ipairs({
 	{ "AA", "Flag going ramp!" }, { "AX", "Flag going tunnel!" },
@@ -854,7 +859,7 @@ versionThree.X.variants.RAID.A.text = "Custom defense."
 versionThree.Y.variants.GROUP = nil
 PADChatDB = { menu = versionThree, compact = false, version = 3 }
 Event("ADDON_LOADED", "PADChat")
-assert(ns.DB.version == 9 and ns.DB.menu.A.variants.RAID.battlegrounds[489].A.text == "Flag going ramp!")
+assert(ns.DB.version == 10 and ns.DB.menu.A.variants.RAID.battlegrounds[489].A.text == "Flag going ramp!")
 assert(ns.DB.menu.X.variants.RAID.A.text == "Custom defense." and ns.DB.menu.X.variants.RAID.battlegrounds == nil)
 assert(ns.DB.menu.Y.variants.GROUP == nil)
 ns.DB.menu.A.variants.RAID.battlegrounds[489].A.text = "Custom flag call!"
@@ -910,9 +915,33 @@ local preRoleplay = ns.CopyMenu(shippedDefaults)
 for _, key in ipairs(ns.CHOICES) do preRoleplay[key].variants.RP, preRoleplay[key].variants.RP_HORDE = nil, nil end
 preRoleplay.A.A.text = "Yep!"
 PADChatDB = { menu = preRoleplay, compact = false, version = 8 }; Event("ADDON_LOADED", "PADChat")
-assert(ns.DB.version == 9 and ns.DB.roleplay == true and ns.DB.menu.A.A.text == "Yep!")
+assert(ns.DB.version == 10 and ns.DB.roleplay == true and ns.DB.menu.A.A.text == "Yep!")
 assert(ns.ResolveNode(ns.GetMenu(), "RP").A.A.A.text == "Well met, {TARGET}!")
 assert(ns.DB.menu.Y.variants.RP_HORDE.X.A.text == "For the Horde!" and ns.DB.menu.A.variants.RP ~= shippedDefaults.A.variants.RP)
+
+-- The Guild tab follows Group, inherits Say (not Group), and sends to /g. Its
+-- Callout slot holds guild calls. Out of a guild it says so and sends nothing.
+ns.ResetToDefaults(); Group(); combat = true
+Pad("LeftButton"); Pad("RB"); Pad("RB"); Pad("RB"); assert(PADChatOpen:GetAttribute("menucontext") == "GUILD")
+assert(Find(function(o) return o.parent == PADChatMenu and o.text == "Join a guild first" end))
+previous = sent; Pad("Y"); Pad("A"); assert(sent == previous, "No guild, no send"); Released()
+guilded = true
+Pad("LeftButton"); Pad("RB"); Pad("RB"); Pad("RB")
+assert(Find(function(o) return o.parent == PADChatMenu and o.text == "|cff9d9d9dto|r Guild" end))
+Pad("Y"); Pad("A"); assert(sent[1] == "Grats!" and sent[2] == "GUILD"); Released()
+assert(Find(function(o) return o.parent == PADChatToast and o.text == "Guild: Grats!" end))
+Group("PARTY"); Pad("LeftButton"); Pad("RB"); Pad("X"); Pad("A"); Pad("A")
+assert(sent[1] == "Hello" and sent[2] == "GUILD", "Guild inherits Say, not Group's readiness calls"); Released()
+combat = false; Group(); guilded = false
+-- Saves from before the Guild tab gain its calls; a Guild override stays.
+local preGuild = ns.CopyMenu(shippedDefaults)
+preGuild.Y.variants.GUILD = nil
+PADChatDB = { menu = preGuild, compact = false, version = 9 }; Event("ADDON_LOADED", "PADChat")
+assert(ns.DB.version == 10 and ns.ResolveNode(ns.GetMenu(), "GUILD").Y.A.text == "Grats!")
+preGuild = ns.CopyMenu(shippedDefaults)
+preGuild.Y.variants.GUILD = { label = "Mine", A = { text = "gz" } }
+PADChatDB = { menu = preGuild, compact = false, version = 9 }; Event("ADDON_LOADED", "PADChat")
+assert(ns.ResolveNode(ns.GetMenu(), "GUILD").Y.A.text == "gz")
 
 assert(next(SlashCmdList) == nil, "slash commands taint Forever's gamepad UI")
 

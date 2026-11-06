@@ -210,6 +210,7 @@ for i, condition in ipairs(ns.CONTEXTS) do
 		nameBox:ClearFocus(); textBox:ClearFocus(); move:Hide(); confirm:Hide(); emotePanel:Hide()
 		typingField, context = nil, condition; detail:ScrollTo(0); Refresh()
 	end)
+	mappings[condition].label:SetFontObject("GameFontHighlightSmall"); mappings[condition].label:SetWidth(mappingWidth - 4)
 end
 local customize = Button(editor, "Customize option", 16, -130, 168, function()
 	local node, owned = At(selected)

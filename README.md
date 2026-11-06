@@ -11,7 +11,7 @@ I've played World of Warcraft with a controller for many years, and communicatin
 ## Features
 
 - **Button combos:** Navigate chat menus up to 4 presses deep using the face buttons (**A / X / Y** or **Cross / Square / Triangle**).
-- **Context tabs:** Tap **LB / RB** (bumpers) to switch between **Whisper**, **Say**, **RP**, **Group**, and **Battleground** tabs. The header shows where the current tab sends (for example *to Party* or *to Bob*), or why it can't.
+- **Context tabs:** Tap **LB / RB** (bumpers) to switch between **Whisper**, **Say**, **RP**, **Group**, **Guild**, and **Battleground** tabs. **Guild** sends your Say options to guild chat, with guild calls (*Grats!*, *Anyone up for a dungeon run?*) in place of Callout. The header shows where the current tab sends (for example *to Party* or *to Bob*), or why it can't.
 - **Roleplay tab:** For RP servers. The **RP** tab, one bumper press from where the menu opens, speaks in character on `/say` with fitting emotes: greetings, farewells, tavern banter, guard lines and battle cries. Alliance characters hear "Light be with you" and "For the Alliance!", Horde characters "Throm-Ka" and "Lok'tar ogar!". `{TARGET}` fills in your target's name ("Well met, Bob!") and `{NAME}` your own. Edit the phrases in the editor's **RP** tab, or turn the tab off under **Settings → Quick chat → Roleplay tab**.
 - **Whispers:** The Whisper tab sends your Say messages privately. A list of the people you've recently whispered or been whispered by (most recent first), followed by your online group members, appears beside the overlay; pick one with **D-pad Up / Down**.
 - **Looking For Group integration:** Select a group or player in the Looking For Group window and press **Y** to whisper them with quick chat. It opens on a special **LFG** tab with role replies (`{LEVEL} {CLASS} DPS`, `HEALS` or `TANK`, for example "60 Mage HEALS"); LB / RB still reach the other tabs. A **Y** prompt appears beside **Send Message**. In the window's **Who** tab, move the cursor onto a player and press **Y**; the row shows the **Y** prompt. Turn both off under **Settings → Integrations → Enhance LFG Window**.
@@ -54,7 +54,7 @@ I've played World of Warcraft with a controller for many years, and communicatin
 | **Action bar macro (`PADChat`)** | Open quick chat |
 | **A / X / Y** *(Cross / Square / Triangle)* | Select a category or message |
 | **B** *(Circle)* | Cancel / close the menu |
-| **LB / RB** *(left / right bumper)* | Switch tabs (Whisper / Say / RP / Group / BG) |
+| **LB / RB** *(left / right bumper)* | Switch tabs (Whisper / Say / RP / Group / Guild / BG) |
 | **D-pad Up / Down** *(Whisper and LFG tabs only)* | Choose who to whisper |
 | **Y** *(Looking For Group window, listing selected)* | Whisper that listing's leader from the LFG tab |
 | **Y** *(Looking For Group Who tab, on a player)* | Whisper that player |
@@ -77,6 +77,7 @@ I've played World of Warcraft with a controller for many years, and communicatin
 ### 0.4.0
 
 - New **RP** (Roleplay) tab between Say and Group: in-character greetings, farewells, courtesies, banter, guard lines, battle cries and warnings, spoken on `/say` with emotes. Alliance and Horde characters each get their own phrases, kept separately so an account with both keeps both.
+- New **Guild** tab after Group: your Say options sent to guild chat, with guild calls (Grats, dungeon runs, quest help) in the Callout slot. It greys out with *Join a guild first* when you aren't in one.
 - New `{TARGET}` (your target's name, or "friend") and `{NAME}` (your name) placeholders.
 - **Settings → Quick chat → Roleplay tab** turns the tab on or off.
 - Refreshed look: gold-trimmed frame, a bumper-flanked tab strip with the active tab underlined, and a breadcrumb showing where you are in the menu.

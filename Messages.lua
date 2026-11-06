@@ -8,9 +8,9 @@
 -- then A" works the same as Tribes 2's "V G Y".
 --
 -- The selected Whisper, Say, Group or Battleground tab determines where messages
--- go. `variants.WHISPER`, `variants.GROUP` and `variants.RAID` replace options on
--- those tabs; Whisper inherits Say, Battleground inherits Group, and false
--- clears a slot.
+-- go. `variants.WHISPER`, `variants.GROUP`, `variants.GUILD` and `variants.RAID`
+-- replace options on those tabs; Whisper and Guild inherit Say, Battleground
+-- inherits Group, and false clears a slot.
 -- A message sends chat text, an `emote` token, or both: "Wave" is emote-only
 -- and says nothing. Chat text can hold {location}, {LEVEL} and {CLASS}
 -- placeholders, plus {TARGET} and {NAME}. The LFG tab (`variants.LFG`)
@@ -87,6 +87,13 @@ ns.DefaultMenu.A.variants = {
 		X = { label = "4-6 inc {location}", text = "4-6 inc {location}" },
 		Y = { label = "Big INC {location}!", text = "Big INC {location}!" },
 	},
+}
+
+-- The Guild tab inherits Say, with guild chat calls in place of Callout.
+ns.DefaultMenu.Y.variants.GUILD = { label = "Guild",
+	A = { label = "Grats!", text = "Grats!" },
+	X = { label = "Dungeon run?", text = "Anyone up for a dungeon run?" },
+	Y = { label = "Quest help?", text = "Anyone free to help with a quest?" },
 }
 
 -- The LFG tab answers a Looking For Group listing with the player's role.

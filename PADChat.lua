@@ -69,9 +69,10 @@ ns.BATTLEGROUNDS_ENABLED = ns.BATTLEGROUNDS_ENABLED or false
 -- the tab the menu opens on. LFG whispers like Whisper (and inherits it), but
 -- only shows when Y on a Looking For Group listing opened the menu. Roleplay
 -- (RP) speaks on /say with its own in-character phrases, and can be turned off.
-ns.CONTEXTS = { "LFG", "WHISPER", "DEFAULT", "RP", "GROUP", ns.BATTLEGROUNDS_ENABLED and "RAID" or nil }
+-- Guild inherits Say like Whisper does, and sends to guild chat.
+ns.CONTEXTS = { "LFG", "WHISPER", "DEFAULT", "RP", "GROUP", "GUILD", ns.BATTLEGROUNDS_ENABLED and "RAID" or nil }
 -- Retain the saved RAID variant key for existing menus; it is now the BG tab.
-ns.CONTEXT_LABELS = { LFG = "LFG", WHISPER = "Whisper", DEFAULT = "Say", RP = "RP", GROUP = "Group", RAID = "Battleground" }
+ns.CONTEXT_LABELS = { LFG = "LFG", WHISPER = "Whisper", DEFAULT = "Say", RP = "RP", GROUP = "Group", GUILD = "Guild", RAID = "Battleground" }
 -- The HUD's tab strip is narrower than the editor.
 ns.TAB_LABELS = setmetatable({ RAID = "BG" }, { __index = ns.CONTEXT_LABELS })
 
@@ -164,6 +165,8 @@ function ns.PickNode(node, context)
 	if variants then
 		if context == "RP" then
 			if variants[ns.RoleplayKey()] ~= nil then condition = "RP" end
+		elseif context == "GUILD" then
+			if variants.GUILD ~= nil then condition = "GUILD" end
 		elseif context == "LFG" and variants.LFG ~= nil then condition = "LFG"
 		elseif context == "WHISPER" or context == "LFG" then
 			if variants.WHISPER ~= nil then condition = "WHISPER" end
@@ -200,6 +203,7 @@ end
 function ns.GetChannel(chat)
 	if not chat or chat == "SAY" or chat == "DEFAULT" or chat == "RP" then return "SAY" end
 	if chat == "WHISPER" or chat == "LFG" then return ns.GetWhisperTarget() and "WHISPER" or nil end
+	if chat == "GUILD" then return IsInGuild() and "GUILD" or nil end
 	local instance = IsInGroup(LE_PARTY_CATEGORY_INSTANCE)
 	if chat == "GROUP" then
 		if instance then return "INSTANCE_CHAT" end
@@ -304,6 +308,14 @@ function ns.UpgradeRoleplay(menu)
 	end
 end
 
+-- The Guild tab's own Callout options join saves from before it, unless that
+-- slot already has a Guild override.
+function ns.UpgradeGuild(menu)
+	menu.Y = menu.Y or { empty = true }
+	menu.Y.variants = menu.Y.variants or {}
+	if menu.Y.variants.GUILD == nil then menu.Y.variants.GUILD = DeepCopy(ns.DefaultMenu.Y.variants.GUILD) end
+end
+
 local activeMenus = {}
 for _, context in ipairs(ns.CONTEXTS) do activeMenus[context] = ns.ResolveNode(ns.DefaultMenu, context, 0) end
 activeMenus.WSG = ns.ResolveNode(ns.DefaultMenu, "RAID", 489)
@@ -365,7 +377,7 @@ open:SetAttribute("_onclick", [[
 		local context = self:GetAttribute("menucontext") or "DEFAULT"
 		-- The tabs this menu shows, left to right; both ends wrap.
 		local order = (self:GetAttribute("lfgopen") and "LFG " or "") .. "WHISPER DEFAULT "
-			.. (self:GetAttribute("roleplay") and "RP " or "") .. "GROUP"
+			.. (self:GetAttribute("roleplay") and "RP " or "") .. "GROUP GUILD"
 			.. (self:GetAttribute("battlegrounds") and " RAID" or "")
 		local first, last, before, after, seen
 		for name in order:gmatch("%S+") do
@@ -575,12 +587,14 @@ local lastSeq = 0
 
 -- Where a tab sends right now, as the player knows the channel and in its chat
 -- colour, or why it can't: name, r, g, b, available.
-local CHANNEL_NAMES = { SAY = "Say", PARTY = "Party", RAID = "Raid", INSTANCE_CHAT = "Instance" }
+local CHANNEL_NAMES = { SAY = "Say", PARTY = "Party", RAID = "Raid", INSTANCE_CHAT = "Instance", GUILD = "Guild" }
+-- What a tab needs before it can send.
+local NEEDS = { RAID = "battleground", GUILD = "guild" }
 function ns.Destination(context)
 	local chatType = ns.GetChannel(context)
 	if not chatType then
 		local reason = (context == "WHISPER" or context == "LFG") and "No one to whisper"
-			or context == "RAID" and "Join a battleground first" or "Join a group first"
+			or "Join a " .. (NEEDS[context] or "group") .. " first"
 		return reason, 1, 0.45, 0.4, false
 	end
 	local name = CHANNEL_NAMES[chatType]
@@ -600,7 +614,7 @@ local function SendNode(node, context)
 	if HasText(node) then
 		local chatType = ns.GetChannel(context)
 		if not chatType then
-			local reason = (context == "WHISPER" or context == "LFG") and "No one to whisper." or "Join a " .. (context == "RAID" and "battleground" or "group") .. " to send this message."
+			local reason = (context == "WHISPER" or context == "LFG") and "No one to whisper." or "Join a " .. (NEEDS[context] or "group") .. " to send this message."
 			Print(reason); ns.ShowToast(reason)
 			return
 		end
@@ -780,14 +794,18 @@ function ns.CreateMenuView(parent, name)
 		shoulders.LB:SetText(KeyMarkup("LB", 18))
 		shoulders.RB:SetText(KeyMarkup("RB", 18))
 		shoulders.LB:SetPoint("LEFT", menu, "TOPLEFT", 14, -45)
-		local tabX = 40
+		-- Tabs share the strip between the bumpers, trimming their padding to fit.
+		local shown, textWidth = {}, 0
 		for _, tabContext in ipairs(ns.CONTEXTS) do
 			local tab = tabs[tabContext]
 			tab:SetShown((tabContext ~= "LFG" or lfg or context == "LFG") and (tabContext ~= "RP" or ns.RoleplayEnabled() or context == "RP"))
-			if tab:IsShown() then
-				tab:SetWidth(math.max(28, tab.label:GetStringWidth() + 14))
-				tab:SetPoint("TOPLEFT", tabX, -34); tabX = tabX + tab:GetWidth() + 2
-			end
+			if tab:IsShown() then shown[#shown + 1] = tab; textWidth = textWidth + tab.label:GetStringWidth() end
+		end
+		local padding = math.max(4, math.min(14, (WIDTH - 80 - textWidth - 2 * (#shown - 1)) / #shown))
+		local tabX = 40
+		for _, tab in ipairs(shown) do
+			tab:SetWidth(tab.label:GetStringWidth() + padding)
+			tab:SetPoint("TOPLEFT", tabX, -34); tabX = tabX + tab:GetWidth() + 2
 		end
 		shoulders.RB:SetPoint("LEFT", menu, "TOPLEFT", tabX + 4, -45)
 		for tabContext, tab in pairs(tabs) do
@@ -1095,8 +1113,9 @@ events:SetScript("OnEvent", function(_, event, arg1)
 		if version < 7 then ns.UpgradeWhisper(ns.DB.menu) end
 		if version < 8 then ns.UpgradeLFG(ns.DB.menu) end
 		if version < 9 then ns.UpgradeRoleplay(ns.DB.menu) end
+		if version < 10 then ns.UpgradeGuild(ns.DB.menu) end
 		ns.MigrateMenu(ns.DB.menu)
-		ns.DB.version = 9
+		ns.DB.version = 10
 	end
 	UpdateContextDriver()
 	PublishMenu()
